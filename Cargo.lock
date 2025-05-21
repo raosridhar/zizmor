@@ -325,9 +325,9 @@ dependencies = [
 
 [[package]]
 name = "clap-verbosity-flag"
-version = "3.0.2"
+version = "3.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2678fade3b77aa3a8ff3aae87e9c008d3fb00473a41c71fbf74e91c8c7b37e84"
+checksum = "eeab6a5cdfc795a05538422012f20a5496f050223c91be4e5420bfd13c641fb1"
 dependencies = [
  "clap",
  "tracing-core",
@@ -760,9 +760,9 @@ dependencies = [
 
 [[package]]
 name = "github-actions-models"
-version = "0.28.2"
+version = "0.28.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f97053a0b03d9cd4ec5c56f1b2e7bc97ae0e66d1f78778acee61a9100cb2181"
+checksum = "81a9d173bb88844b5f73054fa931e4ee40bb1682d2922dfc4e93bc47e2d63951"
 dependencies = [
  "indexmap",
  "serde",
