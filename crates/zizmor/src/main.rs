@@ -158,6 +158,8 @@ pub(crate) enum OutputFormat {
     Sarif,
     /// GitHub Actions workflow command-formatted output.
     Github,
+    /// List only the actions used.
+    ActionsList
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum)]
@@ -571,6 +573,7 @@ fn run() -> Result<ExitCode> {
     register_audit!(audit::obfuscation::Obfuscation);
     register_audit!(audit::stale_action_refs::StaleActionRefs);
     register_audit!(audit::unpinned_images::UnpinnedImages);
+    register_audit!(audit::list_actions::ListActions);
 
     let mut results = FindingRegistry::new(&app, &config);
     {
@@ -608,6 +611,87 @@ fn run() -> Result<ExitCode> {
             serde_json::to_writer_pretty(stdout(), &output::sarif::build(results.findings()))?
         }
         OutputFormat::Github => output::github::output(stdout(), results.findings())?,
+        OutputFormat::ActionsList => {
+            use std::fs::File;
+            use camino::Utf8Path;
+            
+            // Create structs for JSON serialization
+            #[derive(serde::Serialize)]
+            struct UnpinnedActionsOutput {
+                files: std::collections::BTreeMap<String, Vec<String>>
+            }
+        
+            #[derive(serde::Serialize)]
+            struct AllActionsOutput {
+                actions: Vec<String>
+            }
+        
+            // Collect all actions
+            let all_actions: Vec<_> = results
+                .findings()
+                .iter()
+                .filter_map(|f| {
+                    if f.ident == "list-actions" {
+                        f.locations
+                            .first()
+                            .map(|loc| loc.symbolic.annotation.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+        
+            // Collect unpinned actions by file
+            let mut files_to_unpinned: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+            
+            results
+                .findings()
+                .iter()
+                .filter(|f| f.ident == "unpinned-uses")
+                .for_each(|f| {
+                    if let Some(loc) = f.locations.first() {
+                        let filename = loc.symbolic.key.filename().to_string();
+                        let action = loc.concrete.feature.trim().to_string();
+                        files_to_unpinned
+                            .entry(filename)
+                            .or_default()
+                            .push(action);
+                    }
+                });
+        
+            // Create JSON structures
+            let all_actions_json = AllActionsOutput {
+                actions: all_actions
+            };
+            
+            let unpinned_actions_json = UnpinnedActionsOutput {
+                files: files_to_unpinned
+            };
+        
+            // Get output directory, create if it doesn't exist
+            let output_dir = app.output_dir.as_deref().unwrap_or(Utf8Path::new("."));
+            std::fs::create_dir_all(output_dir)?;
+        
+            // Create file paths
+            let all_actions_path = output_dir.join("all_actions.json");
+            let unpinned_actions_path = output_dir.join("unpinned_actions.json");
+        
+            // Write to files
+            let all_actions_file = File::create(&all_actions_path)
+                .with_context(|| format!("Failed to create {}", all_actions_path))?;
+            serde_json::to_writer_pretty(all_actions_file, &all_actions_json)
+                .with_context(|| format!("Failed to write to {}", all_actions_path))?;
+        
+            let unpinned_actions_file = File::create(&unpinned_actions_path)
+                .with_context(|| format!("Failed to create {}", unpinned_actions_path))?;
+            serde_json::to_writer_pretty(unpinned_actions_file, &unpinned_actions_json)
+                .with_context(|| format!("Failed to write to {}", unpinned_actions_path))?;
+        
+            // Print confirmation message
+            println!("\nOutput written to:");
+            println!("- {}", all_actions_path);
+            println!("- {}", unpinned_actions_path);
+        }
     };
 
     if app.no_exit_codes || matches!(app.format, OutputFormat::Sarif) {

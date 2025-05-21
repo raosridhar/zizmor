@@ -38,6 +38,7 @@ pub(crate) mod unpinned_uses;
 pub(crate) mod unredacted_secrets;
 pub(crate) mod unsound_contains;
 pub(crate) mod use_trusted_publishing;
+pub(crate) mod list_actions;
 
 #[derive(Debug)]
 pub(crate) enum AuditInput {
