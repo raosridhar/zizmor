@@ -612,36 +612,52 @@ fn run() -> Result<ExitCode> {
         }
         OutputFormat::Github => output::github::output(stdout(), results.findings())?,
         OutputFormat::ActionsList => {
-            use std::fs::File;
+            use std::{fs::File, collections::BTreeSet};  // Add BTreeSet import
+            
+            // Get the repository name from the first input
+            let repo_name = if let Some(input) = registry.inputs.keys().next() {
+                match input {
+                    InputKey::Remote(_) => {
+                        let url = input.to_string();
+                        let parts: Vec<&str> = url.split('/').collect();
+                        if parts.len() >= 5 {
+                            format!("{}_{}", parts[3], parts[4])
+                        } else {
+                            "unknown".to_string()
+                        }
+                    }
+                    InputKey::Local(_) => "local".to_string()
+                }
+            } else {
+                "unknown".to_string()
+            };
             
             // Create structs for JSON serialization
             #[derive(serde::Serialize)]
-            struct UnpinnedActionsOutput {
-                files: std::collections::BTreeMap<String, Vec<String>>
+            struct ActionsOutput {
+                files: std::collections::BTreeMap<String, Vec<String>>  // The Vec will be populated from BTreeSet
             }
         
-            #[derive(serde::Serialize)]
-            struct AllActionsOutput {
-                actions: Vec<String>
-            }
-        
-            // Collect all actions
-            let all_actions: Vec<_> = results
+            // Collect all actions by file using BTreeSet for deduplication
+            let mut files_to_actions: std::collections::BTreeMap<String, BTreeSet<String>> = std::collections::BTreeMap::new();
+            
+            results
                 .findings()
                 .iter()
-                .filter_map(|f| {
-                    if f.ident == "list-actions" {
-                        f.locations
-                            .first()
-                            .map(|loc| loc.symbolic.annotation.clone())
-                    } else {
-                        None
+                .filter(|f| f.ident == "list-actions")
+                .for_each(|f| {
+                    if let Some(loc) = f.locations.first() {
+                        let filename = loc.symbolic.key.filename().to_string();
+                        let action = loc.symbolic.annotation.clone();
+                        files_to_actions
+                            .entry(filename)
+                            .or_default()
+                            .insert(action);  // Using insert instead of push
                     }
-                })
-                .collect();
+                });
         
-            // Collect unpinned actions by file
-            let mut files_to_unpinned: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+            // Collect unpinned actions by file using BTreeSet for deduplication
+            let mut files_to_unpinned: std::collections::BTreeMap<String, BTreeSet<String>> = std::collections::BTreeMap::new();
             
             results
                 .findings()
@@ -654,34 +670,43 @@ fn run() -> Result<ExitCode> {
                         files_to_unpinned
                             .entry(filename)
                             .or_default()
-                            .push(action);
+                            .insert(action);  // Using insert instead of push
                     }
                 });
         
-            // Create JSON structures
-            let all_actions_json = AllActionsOutput {
-                actions: all_actions
+            // Convert BTreeSets to Vecs for serialization
+            let all_actions_json = ActionsOutput {
+                files: files_to_actions
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into_iter().collect()))
+                    .collect()
             };
             
-            let unpinned_actions_json = UnpinnedActionsOutput {
+            let unpinned_actions_json = ActionsOutput {
                 files: files_to_unpinned
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into_iter().collect()))
+                    .collect()
             };
         
-            // Write to files
-            let all_actions_file = File::create("all_actions.json")
-                .with_context(|| "Failed to create all_actions.json")?;
-            serde_json::to_writer_pretty(all_actions_file, &all_actions_json)
-                .with_context(|| "Failed to write to all_actions.json")?;
+            // Write to files with repository name prefix
+            let all_actions_filename = format!("{}_all_actions.json", repo_name);
+            let unpinned_actions_filename = format!("{}_unpinned_actions.json", repo_name);
         
-            let unpinned_actions_file = File::create("unpinned_actions.json")
-                .with_context(|| "Failed to create unpinned_actions.json")?;
+            let all_actions_file = File::create(&all_actions_filename)
+                .with_context(|| format!("Failed to create {}", all_actions_filename))?;
+            serde_json::to_writer_pretty(all_actions_file, &all_actions_json)
+                .with_context(|| format!("Failed to write to {}", all_actions_filename))?;
+        
+            let unpinned_actions_file = File::create(&unpinned_actions_filename)
+                .with_context(|| format!("Failed to create {}", unpinned_actions_filename))?;
             serde_json::to_writer_pretty(unpinned_actions_file, &unpinned_actions_json)
-                .with_context(|| "Failed to write to unpinned_actions.json")?;
+                .with_context(|| format!("Failed to write to {}", unpinned_actions_filename))?;
         
             // Print confirmation message
             println!("\nOutput written to:");
-            println!("- all_actions.json");
-            println!("- unpinned_actions.json");
+            println!("- {}", all_actions_filename);
+            println!("- {}", unpinned_actions_filename);
         }
     };
 
