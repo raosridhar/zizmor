@@ -613,7 +613,6 @@ fn run() -> Result<ExitCode> {
         OutputFormat::Github => output::github::output(stdout(), results.findings())?,
         OutputFormat::ActionsList => {
             use std::fs::File;
-            use camino::Utf8Path;
             
             // Create structs for JSON serialization
             #[derive(serde::Serialize)]
@@ -668,29 +667,21 @@ fn run() -> Result<ExitCode> {
                 files: files_to_unpinned
             };
         
-            // Get output directory, create if it doesn't exist
-            let output_dir = app.output_dir.as_deref().unwrap_or(Utf8Path::new("."));
-            std::fs::create_dir_all(output_dir)?;
-        
-            // Create file paths
-            let all_actions_path = output_dir.join("all_actions.json");
-            let unpinned_actions_path = output_dir.join("unpinned_actions.json");
-        
             // Write to files
-            let all_actions_file = File::create(&all_actions_path)
-                .with_context(|| format!("Failed to create {}", all_actions_path))?;
+            let all_actions_file = File::create("all_actions.json")
+                .with_context(|| "Failed to create all_actions.json")?;
             serde_json::to_writer_pretty(all_actions_file, &all_actions_json)
-                .with_context(|| format!("Failed to write to {}", all_actions_path))?;
+                .with_context(|| "Failed to write to all_actions.json")?;
         
-            let unpinned_actions_file = File::create(&unpinned_actions_path)
-                .with_context(|| format!("Failed to create {}", unpinned_actions_path))?;
+            let unpinned_actions_file = File::create("unpinned_actions.json")
+                .with_context(|| "Failed to create unpinned_actions.json")?;
             serde_json::to_writer_pretty(unpinned_actions_file, &unpinned_actions_json)
-                .with_context(|| format!("Failed to write to {}", unpinned_actions_path))?;
+                .with_context(|| "Failed to write to unpinned_actions.json")?;
         
             // Print confirmation message
             println!("\nOutput written to:");
-            println!("- {}", all_actions_path);
-            println!("- {}", unpinned_actions_path);
+            println!("- all_actions.json");
+            println!("- unpinned_actions.json");
         }
     };
 
